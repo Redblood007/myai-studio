@@ -1,39 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionUserId } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { openai } from "@/lib/openai";
 
-async function ensureDefaultUser() {
-  let user = await prisma.user.findFirst({
-    where: { email: "default@myai.local" },
-  });
+export async function GET() {
+  const userId = await getSessionUserId();
 
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        email: "default@myai.local",
-        name: "Default User",
-      },
-    });
+  if (!userId) {
+    return NextResponse.json({ messages: [] }, { status: 401 });
   }
 
-  return user;
-}
-
-export async function GET() {
-  const user = await ensureDefaultUser();
-
   const chat = await prisma.chat.findFirst({
-    where: {
-      userId: user.id,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
+    where: { userId },
+    orderBy: { createdAt: "desc" },
     include: {
       messages: {
-        orderBy: {
-          createdAt: "asc",
-        },
+        orderBy: { createdAt: "asc" },
       },
     },
   });
@@ -50,6 +32,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const userId = await getSessionUserId();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const message = body.message;
 
@@ -60,21 +47,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const user = await ensureDefaultUser();
-
     let chat = await prisma.chat.findFirst({
-      where: {
-        userId: user.id,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
+      where: { userId },
+      orderBy: { createdAt: "desc" },
     });
 
     if (!chat) {
       chat = await prisma.chat.create({
         data: {
-          userId: user.id,
+          userId,
           title: "New Chat",
         },
       });
